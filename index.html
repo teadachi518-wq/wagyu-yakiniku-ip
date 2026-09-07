@@ -31,8 +31,9 @@ body {
 /* ═══════════════════ HERO ═══════════════════ */
 #hero {
   position: relative;
-  height: 92svh;
-  min-height: 560px;
+  height: min(92svh, 100vw / (16/9));
+  min-height: 360px;
+  max-height: 95svh;
   overflow: hidden;
   background: #060503;
 }
@@ -42,12 +43,14 @@ body {
   position: absolute; inset: 0;
   opacity: 0;
   will-change: opacity, filter;
+  background: #060503;
 }
 .slide img {
   width: 100%; height: 100%;
-  object-fit: cover;
-  object-position: center 40%;
+  object-fit: contain;
+  object-position: center center;
   display: block;
+  background: #060503;
 }
 .slide.active {
   opacity: 1;
@@ -437,6 +440,74 @@ footer {
   .cuts-grid { grid-template-columns: 1fr; }
   .cta-btns { flex-direction: column; align-items: center; }
   }
+
+
+/* === STABLE PC DISPLAY FIX (2026-09-07) ===
+   Preserve the whole designed image; never crop image-baked text. */
+#smokeCanvas { display:none !important; }
+.slide { transition: opacity 1.0s ease !important; animation:none !important; filter:none !important; }
+.slide.active { opacity:1 !important; z-index:2; }
+.slide:not(.active) { opacity:0 !important; z-index:1; }
+.slide.leaving, .slide.entering { animation:none !important; filter:none !important; }
+#slides { transform:none !important; opacity:1 !important; }
+
+/* Image-first sections: show the ENTIRE 16:9 artwork on desktop. */
+@media (min-width: 901px) {
+  #hero {
+    width:100%;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    aspect-ratio:16 / 9;
+  }
+  .slide img {
+    width:100% !important;
+    height:100% !important;
+    object-fit:contain !important;
+    object-position:center !important;
+  }
+
+  #cuts { grid-template-columns:1fr !important; }
+  .cuts-img {
+    width:100%;
+    min-height:0 !important;
+    aspect-ratio:16 / 9;
+    background:var(--bg-solid);
+  }
+  .cuts-img img {
+    width:100% !important;
+    height:100% !important;
+    object-fit:contain !important;
+    object-position:center !important;
+    transform:none !important;
+  }
+  .cuts-panel { border-left:none !important; border-top:1px solid var(--rule); }
+
+  .full-bleed {
+    height:auto !important;
+    aspect-ratio:16 / 9;
+    background:var(--bg-solid);
+  }
+  .full-bleed img {
+    width:100% !important;
+    height:100% !important;
+    object-fit:contain !important;
+    object-position:center !important;
+  }
+
+  #cta { background:var(--bg-solid); }
+  #cta img.cta-bg {
+    width:100% !important;
+    height:auto !important;
+    aspect-ratio:16 / 9;
+    object-fit:contain !important;
+    object-position:center !important;
+  }
+}
+
+/* Never start scroll-reveal content invisible if JS is delayed/blocked. */
+.rv { opacity:1; transform:none; }
+
 </style>
 
 <!-- ══════════════ HERO ══════════════ -->
@@ -646,46 +717,43 @@ class Smoke {
   }
 }
 
-/* ══ SLIDESHOW ══════════════════════════════════ */
+/* ══ SLIDESHOW — stable crossfade, no black-frame state ═════ */
 (function() {
-  const slides   = [...document.querySelectorAll('.slide')];
-  const dotBtns  = [...document.querySelectorAll('.nav-dot')];
-  const canvas   = document.getElementById('smokeCanvas');
-  const smoke    = new Smoke(canvas);
-  let cur = 0, locked = false;
+  const slides  = [...document.querySelectorAll('.slide')];
+  const dotBtns = [...document.querySelectorAll('.nav-dot')];
+  if (!slides.length) return;
+  let cur = 0;
+  let timer = null;
 
-  function go(next) {
-    if (locked || next === cur) return;
-    locked = true;
-    const prev = cur;
-    cur = (next + slides.length) % slides.length;
-
-    /* smoke & slide transition */
-    smoke.fire();
-    slides[prev].classList.remove('active');
-    slides[prev].classList.add('leaving');
-    slides[cur].classList.add('entering');
-
-    /* dots */
-    dotBtns[prev].classList.remove('on');
-    dotBtns[cur].classList.add('on');
-
-    setTimeout(() => {
-      slides[prev].classList.remove('leaving');
-      slides[cur].classList.remove('entering');
-      slides[cur].classList.add('active');
-      locked = false;
-    }, 1650);
+  function show(next) {
+    next = (next + slides.length) % slides.length;
+    slides.forEach((s, i) => {
+      s.classList.remove('leaving','entering');
+      s.style.animation = 'none';
+      s.style.filter = 'none';
+      s.classList.toggle('active', i === next);
+    });
+    dotBtns.forEach((d, i) => d.classList.toggle('on', i === next));
+    cur = next;
   }
 
-  /* auto advance */
-  let timer = setInterval(() => go(cur + 1), 5500);
+  function restart() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => show(cur + 1), 5500);
+  }
+
+  show(0);
+  restart();
 
   dotBtns.forEach(d => d.addEventListener('click', () => {
-    clearInterval(timer);
-    go(+d.dataset.i);
-    timer = setInterval(() => go(cur + 1), 5500);
+    show(+d.dataset.i);
+    restart();
   }));
+
+  window.addEventListener('pageshow', () => show(cur));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) show(cur);
+  });
 })();
 
 /* ══ SCROLL REVEAL ══════════════════════════════ */
@@ -698,15 +766,9 @@ class Smoke {
   document.querySelectorAll('.rv').forEach(el => io.observe(el));
 })();
 
-/* ══ HERO PARALLAX ══════════════════════════════ */
+/* ══ HERO PARALLAX — disabled for stable PC scrolling ═════ */
 (function() {
-  const hero = document.getElementById('hero');
   const inner = document.getElementById('slides');
-  const upd = () => {
-    const p = Math.max(0, Math.min(1, -hero.getBoundingClientRect().top / hero.offsetHeight));
-    inner.style.transform = `scale(${1 + p * .06})`;
-    inner.style.opacity   = String(Math.max(1 - p * .4, .3));
-  };
-  window.addEventListener('scroll', upd, {passive:true});
+  if (inner) { inner.style.transform='none'; inner.style.opacity='1'; }
 })();
 </script>
